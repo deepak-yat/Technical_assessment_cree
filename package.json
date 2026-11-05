@@ -1,0 +1,28 @@
+{
+  "name": "hotel-management-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hotel Reservation & Front Desk Management System",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "build": "npm run build --workspace=server && npm run build --workspace=client",
+    "test": "npm run test --workspace=server",
+    "demo:concurrency": "npm run demo:concurrency --workspace=server",
+    "lint": "npm run lint --workspaces",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
+    "docker:db:up": "docker compose up -d mongodb",
+    "docker:db:down": "docker compose down",
+    "docker:db:logs": "docker compose logs -f mongodb"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "prettier": "^3.5.3"
+  }
+}
