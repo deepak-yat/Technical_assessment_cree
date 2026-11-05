@@ -83,89 +83,121 @@ export class ReservationService {
     const totalAmount = calculateReservationPrice(priceSnapshot, nights, input.roomCount);
 
     // 6. Execute atomic booking inside MongoDB transaction with bounded retry
-    const createdReservation = await withTransactionRetry(async (session) => {
-      // Step A: Idempotent upsert to ensure RoomInventory documents exist for all stay dates
-      for (const date of dates) {
-        await RoomInventory.updateOne(
-          {
-            roomTypeId: roomType._id,
-            date,
-          },
-          {
-            $setOnInsert: {
-              capacity: roomType.totalInventory,
-              booked: 0,
+    let isDuplicate = false;
+
+    try {
+      const createdReservation = await withTransactionRetry(async (session) => {
+        // Step 0: Check idempotency inside transaction to catch concurrent in-flight bookings
+        if (idempotencyKey) {
+          const existingInTx = await this.reservationRepo.findByIdempotencyKey(
+            guestId,
+            idempotencyKey,
+          );
+          if (existingInTx) {
+            isDuplicate = true;
+            return existingInTx;
+          }
+        }
+
+        // Step A: Idempotent upsert to ensure RoomInventory documents exist for all stay dates
+        for (const date of dates) {
+          await RoomInventory.updateOne(
+            {
+              roomTypeId: roomType._id,
+              date,
             },
-          },
-          {
-            upsert: true,
-            session,
-          },
-        );
-      }
-
-      // Step B: Atomically increment booked count for each night with conditional guard
-      // Guard condition: booked <= (capacity - roomCount)
-      for (const date of dates) {
-        const updatedInventory = await RoomInventory.findOneAndUpdate(
-          {
-            roomTypeId: roomType._id,
-            date,
-            booked: { $lte: roomType.totalInventory - input.roomCount },
-          },
-          {
-            $inc: { booked: input.roomCount },
-          },
-          {
-            session,
-            new: true,
-          },
-        );
-
-        if (!updatedInventory) {
-          // Overbooking condition detected on this night!
-          // Abort the entire transaction by throwing ConflictError
-          throw new ConflictError(
-            `Insufficient room inventory on date ${date}. Requested ${input.roomCount} room(s).`,
-            { conflictDate: date, requestedRooms: input.roomCount },
-            ErrorCodes.INSUFFICIENT_INVENTORY,
+            {
+              $setOnInsert: {
+                capacity: roomType.totalInventory,
+                booked: 0,
+              },
+            },
+            {
+              upsert: true,
+              session,
+            },
           );
         }
-      }
 
-      // Step C: Generate unique reference and persist the reservation
-      const reference = generateReservationReference();
-
-      const reservationDoc = await this.reservationRepo.create(
-        {
-          reference,
-          guest: new Types.ObjectId(guestId),
-          roomType: roomType._id,
-          checkIn: input.checkIn,
-          checkOut: input.checkOut,
-          guestCount: input.guestCount,
-          roomCount: input.roomCount,
-          priceSnapshot,
-          totalAmount,
-          status: ReservationStatuses.CONFIRMED,
-          idempotencyKey: idempotencyKey || null,
-          statusHistory: [
+        // Step B: Atomically increment booked count for each night with conditional guard
+        // Guard condition: booked <= (capacity - roomCount)
+        for (const date of dates) {
+          const updatedInventory = await RoomInventory.findOneAndUpdate(
             {
-              fromStatus: null,
-              toStatus: ReservationStatuses.CONFIRMED,
-              changedAt: new Date(),
-              reason: 'Reservation booked successfully',
-              changedBy: new Types.ObjectId(guestId),
+              roomTypeId: roomType._id,
+              date,
+              booked: { $lte: roomType.totalInventory - input.roomCount },
             },
-          ],
-        },
-        session,
-      );
+            {
+              $inc: { booked: input.roomCount },
+            },
+            {
+              session,
+              new: true,
+            },
+          );
 
-      return reservationDoc;
-    });
+          if (!updatedInventory) {
+            // Overbooking condition detected on this night!
+            // Abort the entire transaction by throwing ConflictError
+            throw new ConflictError(
+              `Insufficient room inventory on date ${date}. Requested ${input.roomCount} room(s).`,
+              { conflictDate: date, requestedRooms: input.roomCount },
+              ErrorCodes.INSUFFICIENT_INVENTORY,
+            );
+          }
+        }
 
-    return { reservation: createdReservation.toDto(), isDuplicate: false };
+        // Step C: Generate unique reference and persist the reservation
+        const reference = generateReservationReference();
+
+        const reservationDoc = await this.reservationRepo.create(
+          {
+            reference,
+            guest: new Types.ObjectId(guestId),
+            roomType: roomType._id,
+            checkIn: input.checkIn,
+            checkOut: input.checkOut,
+            guestCount: input.guestCount,
+            roomCount: input.roomCount,
+            priceSnapshot,
+            totalAmount,
+            status: ReservationStatuses.CONFIRMED,
+            idempotencyKey: idempotencyKey || null,
+            statusHistory: [
+              {
+                fromStatus: null,
+                toStatus: ReservationStatuses.CONFIRMED,
+                changedAt: new Date(),
+                reason: 'Reservation booked successfully',
+                changedBy: new Types.ObjectId(guestId),
+              },
+            ],
+          },
+          session,
+        );
+
+        return reservationDoc;
+      });
+
+      return { reservation: createdReservation.toDto(), isDuplicate };
+    } catch (err: unknown) {
+      // If idempotency collision occurred and escaped retry bounds, return the winning reservation
+      if (
+        idempotencyKey &&
+        err &&
+        typeof err === 'object' &&
+        ((err as { code?: number }).code === 11000 ||
+          (err as Error).message?.includes('E11000') ||
+          (err as Error).message?.includes('idempotencyKey'))
+      ) {
+        const existing = await this.reservationRepo.findByIdempotencyKey(guestId, idempotencyKey);
+        if (existing) {
+          return { reservation: existing.toDto(), isDuplicate: true };
+        }
+      }
+      throw err;
+    }
   }
 
   /**

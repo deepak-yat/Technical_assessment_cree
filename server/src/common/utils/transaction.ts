@@ -64,9 +64,19 @@ export async function withTransactionRetry<T>(
         error instanceof Error &&
         (error.message.includes('WriteConflict') || (error as { code?: number }).code === 112);
 
+      // Handle MongoDB E11000 duplicate key errors during concurrent upserts (e.g. initial RoomInventory creation)
+      const isDuplicateKey =
+        error &&
+        typeof error === 'object' &&
+        ((error as { code?: number }).code === 11000 ||
+          (error as { codeName?: string }).codeName === 'DuplicateKey' ||
+          (error instanceof Error && error.message.includes('E11000')));
+
       attempt++;
 
-      if ((isTransient || isWriteConflict) && attempt <= maxRetries) {
+      const isRetryable = isTransient || isWriteConflict || isDuplicateKey;
+
+      if (isRetryable && attempt <= maxRetries) {
         // Bounded jittered backoff: delay = baseDelay * 2^(attempt-1) + jitter
         const exponentialDelay = baseDelayMs * Math.pow(2, attempt - 1);
         const jitter = Math.random() * baseDelayMs;
@@ -74,7 +84,7 @@ export async function withTransactionRetry<T>(
 
         logger.warn(
           { attempt, maxRetries, totalDelay, errMsg: (error as Error).message },
-          'Transient transaction error encountered, retrying with jittered backoff...',
+          'Transient transaction error or collision encountered, retrying with jittered backoff...',
         );
 
         await new Promise((resolve) => setTimeout(resolve, totalDelay));

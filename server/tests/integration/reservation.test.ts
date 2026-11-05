@@ -336,4 +336,127 @@ describe('Reservations & Concurrency Engine', () => {
       expect(inv?.booked).toBe(0);
     });
   });
+
+  describe('Duplicate-Key & Idempotency Concurrency Handling (P0-3)', () => {
+    it('should handle concurrent first-ever bookings on unseeded dates without 500 or duplicate-key failure', async () => {
+      // Room type with 3 rooms
+      const multiRoom = await RoomType.create({
+        name: 'Triple Deluxe',
+        description: '3 rooms available',
+        capacity: 2,
+        facilities: ['WiFi'],
+        pricePerNight: 100,
+        totalInventory: 3,
+        isActive: true,
+      });
+
+      const today = getTodayUtcString();
+      const [y, m, d] = today.split('-').map(Number);
+      const freshCheckIn = new Date(Date.UTC(y!, m! - 1, d! + 20)).toISOString().split('T')[0]!;
+      const freshCheckOut = new Date(Date.UTC(y!, m! - 1, d! + 22)).toISOString().split('T')[0]!;
+
+      // Confirm NO RoomInventory document exists for this date yet
+      const preCount = await RoomInventory.countDocuments({
+        roomTypeId: multiRoom._id,
+        date: freshCheckIn,
+      });
+      expect(preCount).toBe(0);
+
+      // Fire 3 simultaneous bookings by Guest A and Guest B for 1 room each
+      const requests = [
+        request(app)
+          .post('/api/v1/reservations')
+          .set('Authorization', `Bearer ${guestTokenA}`)
+          .send({
+            roomTypeId: multiRoom._id.toString(),
+            checkIn: freshCheckIn,
+            checkOut: freshCheckOut,
+            guestCount: 1,
+            roomCount: 1,
+          }),
+        request(app)
+          .post('/api/v1/reservations')
+          .set('Authorization', `Bearer ${guestTokenB}`)
+          .send({
+            roomTypeId: multiRoom._id.toString(),
+            checkIn: freshCheckIn,
+            checkOut: freshCheckOut,
+            guestCount: 1,
+            roomCount: 1,
+          }),
+        request(app)
+          .post('/api/v1/reservations')
+          .set('Authorization', `Bearer ${guestTokenA}`)
+          .send({
+            roomTypeId: multiRoom._id.toString(),
+            checkIn: freshCheckIn,
+            checkOut: freshCheckOut,
+            guestCount: 1,
+            roomCount: 1,
+          }),
+      ];
+
+      const responses = await Promise.all(requests);
+
+      // All 3 should succeed with 201 without throwing E11000 duplicate key error
+      for (const res of responses) {
+        expect(res.status).toBe(201);
+        expect(res.body.success).toBe(true);
+      }
+
+      // Verify that RoomInventory was created with booked = 3
+      const invDoc = await RoomInventory.findOne({
+        roomTypeId: multiRoom._id,
+        date: freshCheckIn,
+      });
+      expect(invDoc).not.toBeNull();
+      expect(invDoc?.booked).toBe(3);
+      expect(invDoc?.capacity).toBe(3);
+    });
+
+    it('should handle simultaneous requests with the same Idempotency-Key gracefully (exactly 1 reservation, identical response, no 500)', async () => {
+      const idempotencyKey = 'race-key-' + Date.now();
+
+      // Send 2 identical requests with the SAME Idempotency-Key concurrently
+      const [res1, res2] = await Promise.all([
+        request(app)
+          .post('/api/v1/reservations')
+          .set('Authorization', `Bearer ${guestTokenA}`)
+          .set('Idempotency-Key', idempotencyKey)
+          .send({
+            roomTypeId,
+            checkIn: stayCheckIn,
+            checkOut: stayCheckOut,
+            guestCount: 1,
+            roomCount: 1,
+          }),
+        request(app)
+          .post('/api/v1/reservations')
+          .set('Authorization', `Bearer ${guestTokenA}`)
+          .set('Idempotency-Key', idempotencyKey)
+          .send({
+            roomTypeId,
+            checkIn: stayCheckIn,
+            checkOut: stayCheckOut,
+            guestCount: 1,
+            roomCount: 1,
+          }),
+      ]);
+
+      // Neither request should return 500
+      expect([200, 201]).toContain(res1.status);
+      expect([200, 201]).toContain(res2.status);
+
+      // Both callers receive the exact same reservation
+      expect(res1.body.data.id).toBe(res2.body.data.id);
+      expect(res1.body.data.reference).toBe(res2.body.data.reference);
+
+      // Verify only 1 reservation was created in DB
+      const dbCount = await Reservation.countDocuments({
+        guest: guestIdA,
+        idempotencyKey,
+      });
+      expect(dbCount).toBe(1);
+    });
+  });
 });
