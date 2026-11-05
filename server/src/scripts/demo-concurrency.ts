@@ -135,10 +135,12 @@ async function runDemo(): Promise<void> {
 
     console.log(`\n${BOLD}4. Execution Results (completed in ${durationMs}ms):${RESET}`);
     let winningReservationId = '';
+    let winner = guestTokens[0]!;
 
     for (const outcome of outcomes) {
       if (outcome.status === 201) {
         winningReservationId = outcome.body.data.id;
+        winner = guestTokens[outcome.clientIndex - 1]!;
         console.log(
           `   ${GREEN}[THREAD ${String(outcome.clientIndex).padStart(2)}] 201 CREATED ${RESET} -> ` +
             `${BOLD}WINNER: ${outcome.guestName}${RESET} (Ref: ${outcome.body.data.reference}, Total: $${outcome.body.data.totalAmount})`,
@@ -180,7 +182,7 @@ async function runDemo(): Promise<void> {
     }
 
     console.log(`${BOLD}6. Testing Exactly-Once Double-Cancel Race Condition:${RESET}`);
-    const winner = guestTokens[0]!;
+    console.log(`   Winner for cancellation test: ${winner.name}`);
 
     console.log(`   Firing 2 parallel POST /cancel requests on the winner reservation...`);
     const [cancel1, cancel2] = await Promise.all([
