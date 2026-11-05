@@ -269,6 +269,77 @@ describe('Room Types and Availability Search', () => {
       const updatedInv = await RoomInventory.findOne({ roomTypeId: room._id, date: futureDate });
       expect(updatedInv?.capacity).toBe(5);
     });
+
+    it('should synchronize future RoomInventory capacity when raising totalInventory (2 to 5)', async () => {
+      const room = await RoomType.create({
+        name: 'Cozy Loft',
+        description: 'Loft apartment in downtown',
+        capacity: 2,
+        facilities: ['WiFi'],
+        pricePerNight: 120,
+        totalInventory: 2,
+        isActive: true,
+      });
+
+      const today = getTodayUtcString();
+      const [y, m, d] = today.split('-').map(Number);
+      const futureCheckIn = new Date(Date.UTC(y!, m! - 1, d! + 2)).toISOString().split('T')[0]!;
+      const futureCheckOut = new Date(Date.UTC(y!, m! - 1, d! + 3)).toISOString().split('T')[0]!;
+
+      // Pre-existing future inventory doc with old capacity of 2
+      await RoomInventory.create({
+        roomTypeId: room._id,
+        date: futureCheckIn,
+        capacity: 2,
+        booked: 0,
+      });
+
+      // Before raising: availability search returns 2 rooms available
+      const beforeSearch = await request(app)
+        .get('/api/v1/room-types/availability')
+        .query({
+          checkIn: futureCheckIn,
+          checkOut: futureCheckOut,
+          guests: 1,
+        });
+
+      const beforeItem = beforeSearch.body.data.find(
+        (item: { roomType: { id: string } }) => item.roomType.id === room._id.toString(),
+      );
+      expect(beforeItem.availableRooms).toBe(2);
+
+      // Staff raises totalInventory from 2 to 5
+      const updateRes = await request(app)
+        .put(`/api/v1/room-types/${room._id.toString()}`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({
+          totalInventory: 5,
+        });
+
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body.data.roomType.totalInventory).toBe(5);
+
+      // Verify the future RoomInventory doc capacity was synchronized to 5
+      const updatedInv = await RoomInventory.findOne({
+        roomTypeId: room._id,
+        date: futureCheckIn,
+      });
+      expect(updatedInv?.capacity).toBe(5);
+
+      // After raising: availability search now correctly reflects 5 rooms available
+      const afterSearch = await request(app)
+        .get('/api/v1/room-types/availability')
+        .query({
+          checkIn: futureCheckIn,
+          checkOut: futureCheckOut,
+          guests: 1,
+        });
+
+      const afterItem = afterSearch.body.data.find(
+        (item: { roomType: { id: string } }) => item.roomType.id === room._id.toString(),
+      );
+      expect(afterItem.availableRooms).toBe(5);
+    });
   });
 
   describe('Availability Search Aggregation Algorithm', () => {

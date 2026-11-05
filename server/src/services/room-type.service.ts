@@ -16,6 +16,7 @@ import {
 import { RoomType, IRoomTypeDocument, RoomTypeResponseDto } from '../models/room-type.model.js';
 import { ConflictError, NotFoundError } from '../common/errors/app-error.js';
 import { getDateRangeArray, getTodayUtcString, validateStayDates } from '../common/utils/date.js';
+import { withTransactionRetry } from '../common/utils/transaction.js';
 import { PipelineStage } from 'mongoose';
 
 export interface RoomAvailabilityResult {
@@ -85,28 +86,44 @@ export class RoomTypeService {
       }
     }
 
-    // BUSINESS RULE: Reject lowering totalInventory below already-booked nights in the future
-    if (input.totalInventory !== undefined && input.totalInventory < existing.totalInventory) {
+    // BUSINESS RULE: Synchronize future inventory capacities on ANY inventory change (raising or lowering).
+    // Wrapped in withTransactionRetry to eliminate race conditions between checking overbooking and updating capacities.
+    if (input.totalInventory !== undefined && input.totalInventory !== existing.totalInventory) {
       const today = getTodayUtcString();
-      const overbooked = await this.inventoryRepo.findFutureOverbookedRecord(
-        id,
-        today,
-        input.totalInventory,
-      );
+      const newInventory = input.totalInventory;
 
-      if (overbooked) {
-        throw new ConflictError(
-          `Cannot reduce total inventory to ${input.totalInventory}. Date ${overbooked.date} already has ${overbooked.booked} room(s) booked.`,
-          {
-            conflictDate: overbooked.date,
-            bookedRooms: overbooked.booked,
-            attemptedCapacity: input.totalInventory,
-          },
-        );
-      }
+      return withTransactionRetry(async (session) => {
+        // Guard check: Reject lowering total inventory below already-booked nights in the future
+        if (newInventory < existing.totalInventory) {
+          const overbooked = await this.inventoryRepo.findFutureOverbookedRecord(
+            id,
+            today,
+            newInventory,
+            session,
+          );
 
-      // Safe to sync future inventory capacities
-      await this.inventoryRepo.syncFutureCapacities(id, today, input.totalInventory);
+          if (overbooked) {
+            throw new ConflictError(
+              `Cannot reduce total inventory to ${newInventory}. Date ${overbooked.date} already has ${overbooked.booked} room(s) booked.`,
+              {
+                conflictDate: overbooked.date,
+                bookedRooms: overbooked.booked,
+                attemptedCapacity: newInventory,
+              },
+            );
+          }
+        }
+
+        // Synchronize future inventory capacities on ANY change (raising or lowering)
+        await this.inventoryRepo.syncFutureCapacities(id, today, newInventory, session);
+
+        const updated = await this.roomTypeRepo.update(id, input, session);
+        if (!updated) {
+          throw new NotFoundError(`Room type with id '${id}' not found`);
+        }
+
+        return updated.toDto();
+      });
     }
 
     const updated = await this.roomTypeRepo.update(id, input);

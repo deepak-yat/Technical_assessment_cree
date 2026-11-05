@@ -1,6 +1,6 @@
 import { RoomType, IRoomTypeDocument } from '../models/room-type.model.js';
 import { ApiPaginationMeta } from '../common/utils/api-response.js';
-import { FilterQuery } from 'mongoose';
+import { FilterQuery, ClientSession } from 'mongoose';
 
 export interface CreateRoomTypeData {
   name: string;
@@ -43,8 +43,16 @@ export class RoomTypeRepository {
     return roomType.save();
   }
 
-  async update(id: string, data: UpdateRoomTypeData): Promise<IRoomTypeDocument | null> {
-    return RoomType.findByIdAndUpdate(id, data, { new: true, runValidators: true }).exec();
+  async update(
+    id: string,
+    data: UpdateRoomTypeData,
+    session?: ClientSession,
+  ): Promise<IRoomTypeDocument | null> {
+    return RoomType.findByIdAndUpdate(id, data, {
+      new: true,
+      runValidators: true,
+      session: session || null,
+    }).exec();
   }
 
   async delete(id: string): Promise<IRoomTypeDocument | null> {

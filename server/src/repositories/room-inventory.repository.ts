@@ -10,6 +10,7 @@ export class RoomInventoryRepository {
     roomTypeId: string,
     fromDate: string,
     newCapacity: number,
+    session?: mongoose.ClientSession,
   ): Promise<IRoomInventoryDocument | null> {
     return RoomInventory.findOne({
       roomTypeId: new mongoose.Types.ObjectId(roomTypeId),
@@ -17,6 +18,7 @@ export class RoomInventoryRepository {
       booked: { $gt: newCapacity },
     })
       .sort({ booked: -1, date: 1 })
+      .session(session || null)
       .exec();
   }
 
@@ -28,6 +30,7 @@ export class RoomInventoryRepository {
     roomTypeId: string,
     fromDate: string,
     newCapacity: number,
+    session?: mongoose.ClientSession,
   ): Promise<void> {
     await RoomInventory.updateMany(
       {
@@ -37,6 +40,7 @@ export class RoomInventoryRepository {
       {
         $set: { capacity: newCapacity },
       },
+      { session },
     ).exec();
   }
 
