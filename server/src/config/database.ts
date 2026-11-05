@@ -5,6 +5,9 @@ import { logger } from '../common/utils/logger.js';
 const MONGOOSE_OPTIONS: mongoose.ConnectOptions = {
   serverSelectionTimeoutMS: 5000,
   connectTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+  maxPoolSize: 50,
+  minPoolSize: 10,
   autoIndex: config.NODE_ENV !== 'production', // Build indexes in dev/test, manage via scripts in prod
 };
 

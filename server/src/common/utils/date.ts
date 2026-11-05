@@ -1,12 +1,23 @@
 import { BadRequestError } from '../errors/app-error.js';
+import { config } from '../../config/env.js';
 
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * Returns today's date formatted as YYYY-MM-DD in UTC.
+ * Returns today's date formatted as YYYY-MM-DD in the hotel's configured timezone.
  */
-export function getTodayUtcString(): string {
-  return new Date().toISOString().split('T')[0]!;
+export function getTodayUtcString(timezone: string = config.HOTEL_TIMEZONE || 'UTC'): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    return formatter.format(new Date()); // Formats as YYYY-MM-DD
+  } catch {
+    return new Date().toISOString().split('T')[0]!;
+  }
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   availabilitySearchSchema,
 } from '../schemas/room-type.schema.js';
 import { authenticate, authorize } from '../common/middleware/auth.js';
+import { availabilityRateLimiter } from '../common/middleware/rate-limiter.js';
 import { UserRoles } from '../types/auth.types.js';
 
 const router = Router();
@@ -21,8 +22,11 @@ const router = Router();
  * @desc    Search room availability across stay dates with minimum room calculation
  * @access  Public
  */
-router.get('/availability', validateRequest(availabilitySearchSchema), (req, res, next) =>
-  roomTypeController.searchAvailability(req, res, next),
+router.get(
+  '/availability',
+  availabilityRateLimiter,
+  validateRequest(availabilitySearchSchema),
+  (req, res, next) => roomTypeController.searchAvailability(req, res, next),
 );
 
 /**

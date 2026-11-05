@@ -23,6 +23,7 @@ import {
   validateStayDates,
 } from '../common/utils/date.js';
 import { calculateReservationPrice } from '../common/utils/pricing.js';
+import { config } from '../config/env.js';
 import { generateReservationReference } from '../common/utils/reference.js';
 import { withTransactionRetry } from '../common/utils/transaction.js';
 import { UserRole, UserRoles } from '../types/auth.types.js';
@@ -150,6 +151,12 @@ export class ReservationService {
 
         // Step C: Generate unique reference and persist the reservation
         const reference = generateReservationReference();
+        const initialStatus = config.AUTO_CONFIRM
+          ? ReservationStatuses.CONFIRMED
+          : ReservationStatuses.PENDING;
+        const initialReason = config.AUTO_CONFIRM
+          ? 'Reservation booked and auto-confirmed'
+          : 'Reservation created in PENDING status awaiting staff confirmation';
 
         const reservationDoc = await this.reservationRepo.create(
           {
@@ -162,14 +169,14 @@ export class ReservationService {
             roomCount: input.roomCount,
             priceSnapshot,
             totalAmount,
-            status: ReservationStatuses.CONFIRMED,
+            status: initialStatus,
             idempotencyKey: idempotencyKey || null,
             statusHistory: [
               {
                 fromStatus: null,
-                toStatus: ReservationStatuses.CONFIRMED,
+                toStatus: initialStatus,
                 changedAt: new Date(),
-                reason: 'Reservation booked successfully',
+                reason: initialReason,
                 changedBy: new Types.ObjectId(guestId),
               },
             ],

@@ -7,6 +7,7 @@ import {
   cancelReservationSchema,
 } from '../schemas/reservation.schema.js';
 import { authenticate } from '../common/middleware/auth.js';
+import { bookingRateLimiter } from '../common/middleware/rate-limiter.js';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ router.use(authenticate);
  * @desc    Book a new reservation (ACID transaction with per-night conditional updates)
  * @access  Private (Authenticated users)
  */
-router.post('/', validateRequest(createReservationSchema), (req, res, next) =>
+router.post('/', bookingRateLimiter, validateRequest(createReservationSchema), (req, res, next) =>
   reservationController.create(req, res, next),
 );
 

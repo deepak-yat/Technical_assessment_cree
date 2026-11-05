@@ -29,6 +29,7 @@ export async function withTransactionRetry<T>(
       session.startTransaction({
         readConcern: { level: 'snapshot' },
         writeConcern: { w: 'majority' },
+        maxCommitTimeMS: 5000,
       });
 
       const result = await operation(session);

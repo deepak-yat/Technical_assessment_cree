@@ -22,6 +22,11 @@ const envSchema = z.object({
       message: 'MONGODB_URI must be a valid MongoDB connection string',
     }),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  HOTEL_TIMEZONE: z.string().default('UTC'),
+  AUTO_CONFIRM: z
+    .string()
+    .default('true')
+    .transform((val) => val === 'true'),
   JWT_ACCESS_SECRET: z
     .string()
     .min(32, 'JWT_ACCESS_SECRET must be at least 32 characters long for security'),
