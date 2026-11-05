@@ -24,12 +24,12 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { hashPassword } from '../common/utils/password.js';
-import { generateReference } from '../common/utils/reference.js';
+import { generateReservationReference } from '../common/utils/reference.js';
 import { getDateRangeArray } from '../common/utils/date.js';
-import { UserModel } from '../models/user.model.js';
-import { RoomTypeModel } from '../models/room-type.model.js';
-import { RoomInventoryModel } from '../models/room-inventory.model.js';
-import { ReservationModel } from '../models/reservation.model.js';
+import { User } from '../models/user.model.js';
+import { RoomType } from '../models/room-type.model.js';
+import { RoomInventory } from '../models/room-inventory.model.js';
+import { Reservation } from '../models/reservation.model.js';
 import {
   ReservationStatuses,
   type ReservationStatus,
@@ -195,13 +195,13 @@ async function seed(): Promise<void> {
   const userDocs: { [email: string]: mongoose.Types.ObjectId } = {};
 
   for (const u of USERS) {
-    const existing = await UserModel.findOne({ email: u.email }).lean();
+    const existing = await User.findOne({ email: u.email }).lean();
     if (existing) {
       console.log(`    ↩  ${u.role.padEnd(5)}  ${u.email}  (already exists)`);
       userDocs[u.email] = existing._id as mongoose.Types.ObjectId;
     } else {
       const passwordHash = await hashPassword(u.password);
-      const created = await UserModel.create({
+      const created = await User.create({
         name: u.name,
         email: u.email,
         passwordHash,
@@ -218,12 +218,12 @@ async function seed(): Promise<void> {
   const roomTypeDocs: { [name: string]: mongoose.Types.ObjectId } = {};
 
   for (const rt of ROOM_TYPES) {
-    const existing = await RoomTypeModel.findOne({ name: rt.name }).lean();
+    const existing = await RoomType.findOne({ name: rt.name }).lean();
     if (existing) {
       console.log(`    ↩  "${rt.name}"  (already exists)`);
       roomTypeDocs[rt.name] = existing._id as mongoose.Types.ObjectId;
     } else {
-      const created = await RoomTypeModel.create({ ...rt });
+      const created = await RoomType.create({ ...rt });
       console.log(`    ✔  "${rt.name}"  inventory=${rt.totalInventory}  active=${rt.isActive}`);
       roomTypeDocs[rt.name] = created._id as mongoose.Types.ObjectId;
     }
@@ -345,7 +345,7 @@ async function seed(): Promise<void> {
     const idempotencyKey = `seed-${seed.guestEmail}-${seed.roomTypeName}-${seed.checkIn}`;
 
     // Check whether this reservation already exists (by idempotencyKey + guest)
-    const existing = await ReservationModel.findOne({
+    const existing = await Reservation.findOne({
       guest: guestId,
       idempotencyKey,
     }).lean();
@@ -414,8 +414,8 @@ async function seed(): Promise<void> {
       });
     }
 
-    await ReservationModel.create({
-      reference: generateReference(),
+    await Reservation.create({
+      reference: generateReservationReference(),
       guest: guestId,
       roomType: roomTypeId,
       checkIn: seed.checkIn,
@@ -433,7 +433,7 @@ async function seed(): Promise<void> {
     if (seed.holdInventory) {
       const nights_ = getDateRangeArray(seed.checkIn, seed.checkOut); // [checkIn, checkOut)
       for (const dateStr of nights_) {
-        await RoomInventoryModel.findOneAndUpdate(
+        await RoomInventory.findOneAndUpdate(
           { roomTypeId, date: dateStr },
           {
             $setOnInsert: { capacity: rtData.totalInventory },
@@ -445,16 +445,16 @@ async function seed(): Promise<void> {
     }
 
     console.log(
-      `    ✔  ${seed.status.padEnd(12)} "${seed.roomTypeName}"  ${seed.checkIn} → ${seed.checkOut}  (${nights}n × \$${rtData.pricePerNight} = \$${totalAmount})`,
+      `    ✔  ${seed.status.padEnd(12)} "${seed.roomTypeName}"  ${seed.checkIn} → ${seed.checkOut}  (${nights}n × $${rtData.pricePerNight} = $${totalAmount})`,
     );
   }
 
   // ── 4. Summary ────────────────────────────────────────────────────────────
   console.log('\n📊  Seed summary:');
-  console.log(`    Users:        ${await UserModel.countDocuments()}`);
-  console.log(`    Room types:   ${await RoomTypeModel.countDocuments()}`);
-  console.log(`    Reservations: ${await ReservationModel.countDocuments()}`);
-  console.log(`    Inventory:    ${await RoomInventoryModel.countDocuments()} night-docs`);
+  console.log(`    Users:        ${await User.countDocuments()}`);
+  console.log(`    Room types:   ${await RoomType.countDocuments()}`);
+  console.log(`    Reservations: ${await Reservation.countDocuments()}`);
+  console.log(`    Inventory:    ${await RoomInventory.countDocuments()} night-docs`);
 
   console.log('\n🔑  Demo credentials (NEVER use in production):');
   console.log('    admin@grandhorizon.com   / Admin@123456  (ADMIN)');

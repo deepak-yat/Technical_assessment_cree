@@ -295,13 +295,11 @@ describe('Room Types and Availability Search', () => {
       });
 
       // Before raising: availability search returns 2 rooms available
-      const beforeSearch = await request(app)
-        .get('/api/v1/room-types/availability')
-        .query({
-          checkIn: futureCheckIn,
-          checkOut: futureCheckOut,
-          guests: 1,
-        });
+      const beforeSearch = await request(app).get('/api/v1/room-types/availability').query({
+        checkIn: futureCheckIn,
+        checkOut: futureCheckOut,
+        guests: 1,
+      });
 
       const beforeItem = beforeSearch.body.data.find(
         (item: { roomType: { id: string } }) => item.roomType.id === room._id.toString(),
@@ -327,13 +325,11 @@ describe('Room Types and Availability Search', () => {
       expect(updatedInv?.capacity).toBe(5);
 
       // After raising: availability search now correctly reflects 5 rooms available
-      const afterSearch = await request(app)
-        .get('/api/v1/room-types/availability')
-        .query({
-          checkIn: futureCheckIn,
-          checkOut: futureCheckOut,
-          guests: 1,
-        });
+      const afterSearch = await request(app).get('/api/v1/room-types/availability').query({
+        checkIn: futureCheckIn,
+        checkOut: futureCheckOut,
+        guests: 1,
+      });
 
       const afterItem = afterSearch.body.data.find(
         (item: { roomType: { id: string } }) => item.roomType.id === room._id.toString(),
