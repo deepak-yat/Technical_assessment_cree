@@ -194,7 +194,7 @@ describe('Authentication and RBAC Endpoints', () => {
 
   describe('RBAC Route Protection (Guest vs Staff)', () => {
     it('should reject unauthenticated request to staff endpoint (401)', async () => {
-      const res = await request(app).get('/api/v1/staff-test');
+      const res = await request(app).get('/api/v1/staff/dashboard');
       expect(res.status).toBe(401);
       expect(res.body.error.code).toBe('UNAUTHORIZED');
     });
@@ -206,7 +206,7 @@ describe('Authentication and RBAC Endpoints', () => {
       const guestToken = regRes.body.data.accessToken;
 
       const res = await request(app)
-        .get('/api/v1/staff-test')
+        .get('/api/v1/staff/dashboard')
         .set('Authorization', `Bearer ${guestToken}`);
 
       expect(res.status).toBe(403);
@@ -217,7 +217,7 @@ describe('Authentication and RBAC Endpoints', () => {
     it('should ALLOW Staff member to access staff endpoint (200 OK)', async () => {
       // Seed a staff user directly into DB
       const pwHash = await hashPassword('StaffPassword123');
-      const staffUser = await User.create({
+      await User.create({
         name: 'Staff Bob',
         email: 'staff.bob@hotel.com',
         passwordHash: pwHash,
@@ -233,13 +233,12 @@ describe('Authentication and RBAC Endpoints', () => {
       const staffToken = loginRes.body.data.accessToken;
 
       const res = await request(app)
-        .get('/api/v1/staff-test')
+        .get('/api/v1/staff/dashboard')
         .set('Authorization', `Bearer ${staffToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data.message).toBe('Staff access granted');
-      expect(res.body.data.user.id).toBe(staffUser._id.toString());
+      expect(res.body.data).toHaveProperty('today');
     });
 
     it('should ALLOW Admin to access staff endpoint (role inheritance 200 OK)', async () => {
@@ -261,12 +260,12 @@ describe('Authentication and RBAC Endpoints', () => {
       const adminToken = loginRes.body.data.accessToken;
 
       const res = await request(app)
-        .get('/api/v1/staff-test')
+        .get('/api/v1/staff/dashboard')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data.message).toBe('Staff access granted');
+      expect(res.body.data).toHaveProperty('today');
     });
   });
 });
