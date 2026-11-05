@@ -26,7 +26,7 @@ export const staffReservationQuerySchema = z.object({
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'checkInTo must be formatted as YYYY-MM-DD')
       .optional(),
-    search: z.string().trim().optional(),
+    search: z.string().trim().max(100, 'Search query cannot exceed 100 characters').optional(),
     sortBy: z.enum(['createdAt', 'checkIn', 'checkOut', 'totalAmount']).default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),
   }),

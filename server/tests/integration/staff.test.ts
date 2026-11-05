@@ -227,6 +227,26 @@ describe('Staff Operations & Front-Desk Management', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(2);
     });
+
+    it('should safely handle regex special characters in search without 500 or ReDoS', async () => {
+      // Searching '(' would crash with 500 SyntaxError if unescaped
+      const parenRes = await request(app)
+        .get('/api/v1/staff/reservations')
+        .set('Authorization', `Bearer ${staffToken}`)
+        .query({ search: '(' });
+
+      expect(parenRes.status).toBe(200);
+      expect(parenRes.body.data.length).toBe(0);
+
+      // Searching '.*' should search literally for '.*', not match everything via wildcard
+      const wildcardRes = await request(app)
+        .get('/api/v1/staff/reservations')
+        .set('Authorization', `Bearer ${staffToken}`)
+        .query({ search: '.*' });
+
+      expect(wildcardRes.status).toBe(200);
+      expect(wildcardRes.body.data.length).toBe(0);
+    });
   });
 
   describe('Front-Desk Check-In & Check-Out Flow', () => {

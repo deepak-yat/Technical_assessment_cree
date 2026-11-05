@@ -15,6 +15,7 @@ import {
 import { ConflictError, NotFoundError } from '../common/errors/app-error.js';
 import { ErrorCodes } from '../common/errors/error-codes.js';
 import { getDateRangeArray, getTodayUtcString } from '../common/utils/date.js';
+import { escapeRegex } from '../common/utils/regex.js';
 import { withTransactionRetry } from '../common/utils/transaction.js';
 import { ReservationResponseDto } from '../models/reservation.model.js';
 import { reservationService } from './reservation.service.js';
@@ -82,9 +83,10 @@ export class StaffService {
       if (query.checkInTo) filter.checkIn.$lte = query.checkInTo;
     }
 
-    // 3. Search Filter: by Reference OR Guest Name/Email
+    // 3. Search Filter: by Reference OR Guest Name/Email (safely escaped)
     if (query.search && query.search.trim().length > 0) {
-      const searchRegex = new RegExp(query.search.trim(), 'i');
+      const escaped = escapeRegex(query.search.trim());
+      const searchRegex = new RegExp(escaped, 'i');
 
       // Find guests matching search string
       const matchedUsers = await User.find({
